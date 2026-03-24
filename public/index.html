@@ -1,93 +1,911 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>PARRVA Trade Submission Portal</title>
   <meta charset="UTF-8" />
+  <title>PARRVA Trade Submission Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Bootstrap 5 -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
   <style>
-    body { font-family: Arial; margin: 20px; }
-    input, select { width: 300px; padding: 6px; margin: 5px 0; }
-    button { padding: 10px 20px; margin-top: 10px; }
-    pre { background: #f0f0f0; padding: 10px; }
+    body {
+      background-color: #f5f7fa;
+    }
+    .navbar-brand {
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+    .card {
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      border-radius: 0.5rem;
+    }
+    .form-label {
+      font-weight: 500;
+    }
+    .token-box,
+    .response-box {
+      font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      background: #111827;
+      color: #e5e7eb;
+      padding: 0.75rem;
+      border-radius: 0.35rem;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .required::after {
+      content: " *";
+      color: #dc3545;
+    }
   </style>
 </head>
 <body>
+  <!-- Top bar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand">PARRVA Trade Submission Portal</span>
+      <span class="navbar-text text-secondary small">
+        Powered by your backend · Cloud Run
+      </span>
+    </div>
+  </nav>
 
-<h2>PARRVA Token Generator</h2>
+  <div class="container mb-5">
 
-<label>Enrolment ID</label><br>
-<input id="enrolmentId"><br>
+    <!-- TOKEN GENERATOR -->
+    <div class="row mb-4">
+      <div class="col-lg-6">
+        <div class="card mb-3">
+          <div class="card-header bg-white">
+            <h5 class="mb-0">Token Generator</h5>
+            <small class="text-muted">
+              Enter your PARRVA credentials. Role: TM / IA / RA.
+            </small>
+          </div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label required">Enrolment ID</label>
+              <input type="text" class="form-control" id="enrolmentId" placeholder="e.g. TM000123, IA000456, RA000789" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label required">Password</label>
+              <input type="password" class="form-control" id="password" placeholder="Password set during enrolment" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label required">Role</label>
+              <select class="form-select" id="role">
+                <option value="">Select role</option>
+                <option value="TM">TM</option>
+                <option value="IA">IA</option>
+                <option value="RA">RA</option>
+              </select>
+            </div>
+            <button class="btn btn-primary w-100" id="btnGenerateToken">
+              Generate Token
+            </button>
+          </div>
+        </div>
+      </div>
 
-<label>Password</label><br>
-<input id="password" type="password"><br>
+      <div class="col-lg-6">
+        <div class="card mb-3">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Token</h6>
+            <button class="btn btn-sm btn-outline-secondary" id="btnCopyToken">Copy</button>
+          </div>
+          <div class="card-body">
+            <div id="tokenOutput" class="token-box">
+              Token will appear here after successful generation.
+            </div>
+            <small class="text-muted d-block mt-2">
+              This JWE token will be used as <code>Bearer &lt;token&gt;</code> in all PDC API calls.
+            </small>
+          </div>
+        </div>
+      </div>
+    </div>
 
-<label>Role</label><br>
-<select id="role">
-  <option value="TM">TM</option>
-</select><br>
+    <!-- TRADE SUBMISSION -->
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0">Submit Trade / Algo Input</h5>
+        <small class="text-muted">
+          Fill the form. The app will build the JSON and send it to your backend. No JSON typing required.
+        </small>
+      </div>
+      <div class="card-body">
+        <!-- Tabs -->
+        <ul class="nav nav-tabs mb-3" id="tradeTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="intraday-tab" data-bs-toggle="tab" data-bs-target="#intraday" type="button" role="tab">
+              Intraday
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="singlestock-tab" data-bs-toggle="tab" data-bs-target="#singlestock" type="button" role="tab">
+              Single Stock
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="derivative-tab" data-bs-toggle="tab" data-bs-target="#derivative" type="button" role="tab">
+              Derivative
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="strategy-tab" data-bs-toggle="tab" data-bs-target="#strategy" type="button" role="tab">
+              Strategy
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="algoinput-tab" data-bs-toggle="tab" data-bs-target="#algoinput" type="button" role="tab">
+              Algo Input
+            </button>
+          </li>
+        </ul>
 
-<button onclick="generateToken()">Generate Token</button>
+        <div class="tab-content">
 
-<h3>Token:</h3>
-<pre id="tokenBox"></pre>
+          <!-- INTRADAY -->
+          <div class="tab-pane fade show active" id="intraday" role="tabpanel">
+            <form id="formIntraday" class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label required">Advice Name</label>
+                <input type="text" class="form-control" id="intradayAdviceName" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Tech Call Type</label>
+                <select class="form-select" id="intradayTechCallType">
+                  <option value="">Select</option>
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Exchange</label>
+                <select class="form-select" id="intradayExchange">
+                  <option value="">Select</option>
+                  <option value="NSE">NSE</option>
+                  <option value="BSE">BSE</option>
+                </select>
+              </div>
 
-<hr>
+              <div class="col-md-6">
+                <label class="form-label required">Security Entry DateTime (ISO)</label>
+                <input type="datetime-local" class="form-control" id="intradaySecurityEntryDt" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label required">Tech Call ID (Scrip Name)</label>
+                <input type="text" class="form-control" id="intradayTechCallId" />
+              </div>
 
-<h2>Submit Trade</h2>
+              <div class="col-md-4">
+                <label class="form-label required">ISIN</label>
+                <input type="text" class="form-control" id="intradayIsin" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Entry Price</label>
+                <input type="number" step="0.01" class="form-control" id="intradayEntryPrice" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Target Price</label>
+                <input type="number" step="0.01" class="form-control" id="intradayTargetPrice" />
+              </div>
 
-<label>API Type</label><br>
-<select id="apiType">
-  <option value="intraday">Intraday</option>
-  <option value="singlestock">Single Stock</option>
-  <option value="derivative">Derivative</option>
-  <option value="strategy">Strategy</option>
-  <option value="algoinput">Algo Input</option>
-</select><br>
+              <div class="col-md-4">
+                <label class="form-label required">Stop Loss</label>
+                <input type="number" step="0.01" class="form-control" id="intradayStopLoss" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Exit DateTime (optional)</label>
+                <input type="datetime-local" class="form-control" id="intradayExitDt" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Exit Price (optional)</label>
+                <input type="number" step="0.01" class="form-control" id="intradayExitPrice" />
+              </div>
 
-<textarea id="payload" rows="10" cols="80">
-{
-  "example": "Enter your trade JSON here"
-}
-</textarea><br>
+              <div class="col-12">
+                <label class="form-label">Note (optional)</label>
+                <input type="text" class="form-control" id="intradayNote" />
+              </div>
 
-<button onclick="submitTrade()">Submit</button>
+              <div class="col-12">
+                <button type="submit" class="btn btn-success">
+                  Submit Intraday Advice
+                </button>
+              </div>
+            </form>
+          </div>
 
-<h3>Response:</h3>
-<pre id="responseBox"></pre>
+          <!-- SINGLE STOCK -->
+          <div class="tab-pane fade" id="singlestock" role="tabpanel">
+            <form id="formSingleStock" class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label required">Recommendation Type</label>
+                <select class="form-select" id="ssRecommendationType">
+                  <option value="">Select</option>
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Exchange</label>
+                <select class="form-select" id="ssExchange">
+                  <option value="">Select</option>
+                  <option value="NSE">NSE</option>
+                  <option value="BSE">BSE</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Advice Name</label>
+                <input type="text" class="form-control" id="ssAdviceName" />
+              </div>
 
-<script>
-const backend = "https://parrva-portal-710325307464.asia-south1.run.app"; // we will replace this after Cloud Run deploy
+              <div class="col-md-6">
+                <label class="form-label required">Entry DateTime (ISO)</label>
+                <input type="datetime-local" class="form-control" id="ssEntryDt" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label required">Stock Name</label>
+                <input type="text" class="form-control" id="ssStockName" />
+              </div>
 
-async function generateToken() {
-  const body = {
-    enrolmentId: enrolmentId.value,
-    password: password.value,
-    role: role.value
-  };
+              <div class="col-md-4">
+                <label class="form-label required">ISIN</label>
+                <input type="text" class="form-control" id="ssIsin" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Horizon</label>
+                <input type="number" class="form-control" id="ssHorizon" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Entry Price</label>
+                <input type="number" step="0.01" class="form-control" id="ssEntryPrice" />
+              </div>
 
-  const res = await fetch(backend + "/api/authenticate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
+              <div class="col-md-4">
+                <label class="form-label required">Target Price</label>
+                <input type="number" step="0.01" class="form-control" id="ssTargetPrice" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Stop Loss</label>
+                <input type="number" step="0.01" class="form-control" id="ssSlPrice" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Exit DateTime (optional)</label>
+                <input type="datetime-local" class="form-control" id="ssExitDt" />
+              </div>
 
-  const data = await res.json();
-  tokenBox.textContent = JSON.stringify(data, null, 2);
-}
+              <div class="col-md-4">
+                <label class="form-label">Exit Price (optional)</label>
+                <input type="number" step="0.01" class="form-control" id="ssExitPrice" />
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Note (optional)</label>
+                <input type="text" class="form-control" id="ssNote" />
+              </div>
 
-async function submitTrade() {
-  const type = apiType.value;
-  const body = JSON.parse(payload.value);
+              <div class="col-12">
+                <button type="submit" class="btn btn-success">
+                  Submit Single Stock Advice
+                </button>
+              </div>
+            </form>
+          </div>
 
-  const res = await fetch(backend + "/api/" + type, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
+          <!-- DERIVATIVE -->
+          <div class="tab-pane fade" id="derivative" role="tabpanel">
+            <form id="formDerivative" class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label required">Recommendation Type</label>
+                <select class="form-select" id="derRecommendationType">
+                  <option value="">Select</option>
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Advice Name</label>
+                <input type="text" class="form-control" id="derAdviceName" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Exchange</label>
+                <select class="form-select" id="derExchange">
+                  <option value="">Select</option>
+                  <option value="NSE">NSE</option>
+                  <option value="BSE">BSE</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Derivative Type</label>
+                <select class="form-select" id="derType">
+                  <option value="">Select</option>
+                  <option value="FUT">FUT</option>
+                  <option value="OPT">OPT</option>
+                </select>
+              </div>
 
-  const data = await res.json();
-  responseBox.textContent = JSON.stringify(data, null, 2);
-}
-</script>
+              <div class="col-md-3">
+                <label class="form-label required">Option Type</label>
+                <select class="form-select" id="derOptionType">
+                  <option value="">Select</option>
+                  <option value="CE">CE</option>
+                  <option value="PE">PE</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Instrument Name</label>
+                <input type="text" class="form-control" id="derName" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Expiry Date</label>
+                <input type="date" class="form-control" id="derExpiryDt" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Entry Price</label>
+                <input type="number" step="0.01" class="form-control" id="derEntryPrice" />
+              </div>
 
+              <div class="col-md-4">
+                <label class="form-label required">Entry DateTime (ISO)</label>
+                <input type="datetime-local" class="form-control" id="derEntryDttm" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Target Price</label>
+                <input type="number" step="0.01" class="form-control" id="derTargetPrice" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Stop Loss</label>
+                <input type="number" step="0.01" class="form-control" id="derStopLoss" />
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label">Exit DateTime (optional)</label>
+                <input type="datetime-local" class="form-control" id="derExitDttm" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Exit Price (optional)</label>
+                <input type="number" step="0.01" class="form-control" id="derExitPrice" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Total Margin</label>
+                <input type="number" step="0.01" class="form-control" id="derTotalMargin" />
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label">Strike Price (optional)</label>
+                <input type="text" class="form-control" id="derStrikePrice" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Is Intraday?</label>
+                <select class="form-select" id="derIsIntraday">
+                  <option value="">Select</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Lot (LotSize × No. of Lots)</label>
+                <input type="number" class="form-control" id="derLot" />
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Note (optional)</label>
+                <input type="text" class="form-control" id="derNote" />
+              </div>
+
+              <div class="col-12">
+                <button type="submit" class="btn btn-success">
+                  Submit Derivative Advice
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- STRATEGY -->
+          <div class="tab-pane fade" id="strategy" role="tabpanel">
+            <form id="formStrategy" class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label required">Advice Name</label>
+                <input type="text" class="form-control" id="strAdviceName" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Exchange</label>
+                <select class="form-select" id="strExchange">
+                  <option value="">Select</option>
+                  <option value="NSE">NSE</option>
+                  <option value="BSE">BSE</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Strategy Name</label>
+                <input type="text" class="form-control" id="strStrategyName" />
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label required">Is Intraday?</label>
+                <select class="form-select" id="strIsIntraday">
+                  <option value="">Select</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
+
+              <!-- Single leg for now (can be extended to multi-leg later) -->
+              <div class="col-12">
+                <h6 class="mt-3">Strategy Leg (single leg for now)</h6>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label required">Recommendation Type</label>
+                <select class="form-select" id="strRecType">
+                  <option value="">Select</option>
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Instrument Name</label>
+                <input type="text" class="form-control" id="strDerName" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Strike Price</label>
+                <input type="text" class="form-control" id="strStrikePrice" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Option Type</label>
+                <select class="form-select" id="strOptionType">
+                  <option value="">Select</option>
+                  <option value="CE">CE</option>
+                  <option value="PE">PE</option>
+                </select>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label required">Derivative Type</label>
+                <select class="form-select" id="strDerType">
+                  <option value="">Select</option>
+                  <option value="FUT">FUT</option>
+                  <option value="OPT">OPT</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Expiry Date</label>
+                <input type="date" class="form-control" id="strExpiryDt" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Quantity</label>
+                <input type="number" class="form-control" id="strQuantity" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Entry DateTime</label>
+                <input type="datetime-local" class="form-control" id="strEntryDttm" />
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label required">Entry Price</label>
+                <input type="number" step="0.01" class="form-control" id="strEntryPrice" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Total Margin</label>
+                <input type="number" step="0.01" class="form-control" id="strTotalMargin" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Target Price</label>
+                <input type="number" step="0.01" class="form-control" id="strTargetPrice" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Stop Loss</label>
+                <input type="number" step="0.01" class="form-control" id="strStopLoss" />
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Exit DateTime (optional)</label>
+                <input type="datetime-local" class="form-control" id="strExitDttm" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Exit Price (optional)</label>
+                <input type="number" step="0.01" class="form-control" id="strExitPrice" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Leg ID</label>
+                <input type="number" class="form-control" id="strLegId" value="1" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">Lot</label>
+                <input type="number" class="form-control" id="strLot" />
+              </div>
+
+              <div class="col-12">
+                <button type="submit" class="btn btn-success">
+                  Submit Strategy
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- ALGO INPUT -->
+          <div class="tab-pane fade" id="algoinput" role="tabpanel">
+            <form id="formAlgoInput" class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label required">Exchange</label>
+                <select class="form-select" id="algoExchange">
+                  <option value="">Select</option>
+                  <option value="NSE">NSE</option>
+                  <option value="BSE">BSE</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Trading Member</label>
+                <input type="text" class="form-control" id="algoTradingMember" placeholder="e.g. TM123" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Algo ID</label>
+                <input type="text" class="form-control" id="algoId" placeholder="e.g. ALGO-001" />
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label required">Unique Client Code (UCC)</label>
+                <input type="text" class="form-control" id="algoUcc" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Segment</label>
+                <select class="form-select" id="algoSegment">
+                  <option value="">Select</option>
+                  <option value="CM">CM</option>
+                  <option value="FO">FO</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">Fixed Capital</label>
+                <input type="number" step="0.01" class="form-control" id="algoFixedCapital" />
+              </div>
+
+              <div class="col-12">
+                <button type="submit" class="btn btn-success">
+                  Submit Algo Input
+                </button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+
+        <!-- COMMON RESPONSE BOX -->
+        <hr class="mt-4" />
+        <h6>Response</h6>
+        <div id="responseBox" class="response-box">
+          API responses will appear here.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const backend = "https://parrva-portal-710325307464.asia-south1.run.app";
+
+    const tokenOutput = document.getElementById("tokenOutput");
+    const responseBox = document.getElementById("responseBox");
+
+    function showToken(text) {
+      tokenOutput.textContent = typeof text === "string" ? text : JSON.stringify(text, null, 2);
+    }
+
+    function showResponse(obj) {
+      responseBox.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    function isoFromLocal(input) {
+      if (!input) return null;
+      const d = new Date(input);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    }
+
+    async function callBackend(path, payload) {
+      try {
+        const res = await fetch(backend + path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({ raw: "Non-JSON response", status: res.status }));
+        if (!res.ok) {
+          throw data;
+        }
+        return data;
+      } catch (err) {
+        throw err;
+      }
+    }
+
+    // TOKEN GENERATION
+    document.getElementById("btnGenerateToken").addEventListener("click", async () => {
+      const enrolmentId = document.getElementById("enrolmentId").value.trim();
+      const password = document.getElementById("password").value;
+      const role = document.getElementById("role").value;
+
+      if (!enrolmentId || !password || !role) {
+        showToken("Please fill Enrolment ID, Password and Role.");
+        return;
+      }
+
+      showToken("Generating token...");
+
+      try {
+        // Assumes backend exposes /token that accepts { enrolmentId, password, role }
+        const result = await callBackend("/token", { enrolmentId, password, role });
+        showToken(result);
+      } catch (err) {
+        showToken(err);
+      }
+    });
+
+    document.getElementById("btnCopyToken").addEventListener("click", () => {
+      const text = tokenOutput.textContent || "";
+      if (!text || text.includes("Token will appear here")) return;
+      navigator.clipboard.writeText(text).catch(() => {});
+    });
+
+    // GENERIC TRADE SUBMIT
+    async function submitToTrade(apiType, payload) {
+      showResponse("Submitting " + apiType + " payload...");
+      try {
+        // Assumes backend exposes /trade that accepts { apiType, payload }
+        const result = await callBackend("/trade", { apiType, payload });
+        showResponse(result);
+      } catch (err) {
+        showResponse(err);
+      }
+    }
+
+    // INTRADAY FORM
+    document.getElementById("formIntraday").addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const adviceName = document.getElementById("intradayAdviceName").value.trim();
+      const techCallType = document.getElementById("intradayTechCallType").value;
+      const exchange = document.getElementById("intradayExchange").value;
+      const securityEntryDt = isoFromLocal(document.getElementById("intradaySecurityEntryDt").value);
+      const techCallId = document.getElementById("intradayTechCallId").value.trim();
+      const isin = document.getElementById("intradayIsin").value.trim();
+      const entryPrice = parseFloat(document.getElementById("intradayEntryPrice").value);
+      const targetPrice = parseFloat(document.getElementById("intradayTargetPrice").value);
+      const stopLoss = parseFloat(document.getElementById("intradayStopLoss").value);
+      const exitDtRaw = document.getElementById("intradayExitDt").value;
+      const exitDt = exitDtRaw ? isoFromLocal(exitDtRaw) : null;
+      const exitPriceRaw = document.getElementById("intradayExitPrice").value;
+      const exitPrice = exitPriceRaw ? parseFloat(exitPriceRaw) : null;
+      const note = document.getElementById("intradayNote").value.trim();
+
+      if (!adviceName || !techCallType || !exchange || !securityEntryDt || !techCallId || !isin ||
+          !entryPrice || !targetPrice || !stopLoss) {
+        showResponse("Please fill all required Intraday fields.");
+        return;
+      }
+
+      const body = [{
+        adviceName,
+        techCallType,
+        exchange,
+        securityEntryDt,
+        techCallId,
+        isin,
+        techCallEntryPrice: entryPrice,
+        techCallTargetPrice: targetPrice,
+        techCallStopLoss: stopLoss,
+        techCallExitDate: exitDt || undefined,
+        techCallExitPrice: exitPrice || undefined,
+        note: note || undefined,
+      }];
+
+      submitToTrade("intraday", body);
+    });
+
+    // SINGLE STOCK FORM
+    document.getElementById("formSingleStock").addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const shortTermRecommendationType = document.getElementById("ssRecommendationType").value;
+      const exchange = document.getElementById("ssExchange").value;
+      const adviceName = document.getElementById("ssAdviceName").value.trim();
+      const shortTermEntryDt = isoFromLocal(document.getElementById("ssEntryDt").value);
+      const shortTermStockName = document.getElementById("ssStockName").value.trim();
+      const shortTermIsin = document.getElementById("ssIsin").value.trim();
+      const shortTermHorizon = parseFloat(document.getElementById("ssHorizon").value);
+      const shortTermEntryPrice = parseFloat(document.getElementById("ssEntryPrice").value);
+      const shortTermTargetPrice = parseFloat(document.getElementById("ssTargetPrice").value);
+      const shortTermSlPrice = parseFloat(document.getElementById("ssSlPrice").value);
+      const exitDtRaw = document.getElementById("ssExitDt").value;
+      const shortTermExitDttm = exitDtRaw ? isoFromLocal(exitDtRaw) : null;
+      const exitPriceRaw = document.getElementById("ssExitPrice").value;
+      const shortTermExitPrice = exitPriceRaw ? parseFloat(exitPriceRaw) : null;
+      const note = document.getElementById("ssNote").value.trim();
+
+      if (!shortTermRecommendationType || !exchange || !adviceName || !shortTermEntryDt ||
+          !shortTermStockName || !shortTermIsin || !shortTermHorizon ||
+          !shortTermEntryPrice || !shortTermTargetPrice || !shortTermSlPrice) {
+        showResponse("Please fill all required Single Stock fields.");
+        return;
+      }
+
+      const body = [{
+        shortTermRecommendationType,
+        exchange,
+        adviceName,
+        shortTermEntryDt,
+        shortTermStockName,
+        shortTermIsin,
+        shortTermHorizon,
+        shortTermEntryPrice,
+        shortTermTargetPrice,
+        shortTermSlPrice,
+        shortTermExitDttm: shortTermExitDttm || undefined,
+        shortTermExitPrice: shortTermExitPrice || undefined,
+        note: note || undefined,
+      }];
+
+      submitToTrade("singlestock", body);
+    });
+
+    // DERIVATIVE FORM
+    document.getElementById("formDerivative").addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const recommendationType = document.getElementById("derRecommendationType").value;
+      const adviceName = document.getElementById("derAdviceName").value.trim();
+      const exchange = document.getElementById("derExchange").value;
+      const derivativeType = document.getElementById("derType").value;
+      const derivativeOptionType = document.getElementById("derOptionType").value;
+      const derivativeName = document.getElementById("derName").value.trim();
+      const derivativeExpiryDt = document.getElementById("derExpiryDt").value;
+      const derivativeEntryPrice = parseFloat(document.getElementById("derEntryPrice").value);
+      const derivativeEntryDttm = isoFromLocal(document.getElementById("derEntryDttm").value);
+      const derivativeTargetPrice = parseFloat(document.getElementById("derTargetPrice").value);
+      const derivativeStopLoss = parseFloat(document.getElementById("derStopLoss").value);
+      const exitDttmRaw = document.getElementById("derExitDttm").value;
+      const derivativeExitDttm = exitDttmRaw ? isoFromLocal(exitDttmRaw) : null;
+      const exitPriceRaw = document.getElementById("derExitPrice").value;
+      const derivativeExitPrice = exitPriceRaw ? parseFloat(exitPriceRaw) : null;
+      const derivativeTotalMargin = parseFloat(document.getElementById("derTotalMargin").value);
+      const derivativeOptionStrikePrice = document.getElementById("derStrikePrice").value.trim();
+      const isIntraday = document.getElementById("derIsIntraday").value;
+      const lot = parseFloat(document.getElementById("derLot").value);
+      const note = document.getElementById("derNote").value.trim();
+
+      if (!recommendationType || !adviceName || !exchange || !derivativeType ||
+          !derivativeOptionType || !derivativeName || !derivativeExpiryDt ||
+          !derivativeEntryPrice || !derivativeEntryDttm || !derivativeTargetPrice ||
+          !derivativeStopLoss || !derivativeTotalMargin || !isIntraday || !lot) {
+        showResponse("Please fill all required Derivative fields.");
+        return;
+      }
+
+      const body = [{
+        recommendationType,
+        adviceName,
+        exchange,
+        derivativeType,
+        derivativeOptionType,
+        derivativeName,
+        derivativeExpiryDt,
+        derivativeEntryPrice,
+        derivativeEntryDttm,
+        derivativeTargetPrice,
+        derivativeStopLoss,
+        derivativeExitDttm: derivativeExitDttm || undefined,
+        derivativeExitPrice: derivativeExitPrice || undefined,
+        derivativeTotalMargin,
+        derivativeOptionStrikePrice: derivativeOptionStrikePrice || undefined,
+        isIntraday,
+        note: note || undefined,
+        lot,
+      }];
+
+      submitToTrade("derivative", body);
+    });
+
+    // STRATEGY FORM
+    document.getElementById("formStrategy").addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const adviceName = document.getElementById("strAdviceName").value.trim();
+      const exchange = document.getElementById("strExchange").value;
+      const strategyName = document.getElementById("strStrategyName").value.trim();
+      const isIntraday = document.getElementById("strIsIntraday").value;
+
+      const recommendationType = document.getElementById("strRecType").value;
+      const derivativeName = document.getElementById("strDerName").value.trim();
+      const derivativeOptionStrikePrice = document.getElementById("strStrikePrice").value.trim();
+      const derivativeOptionType = document.getElementById("strOptionType").value;
+      const derivativeType = document.getElementById("strDerType").value;
+      const derivativeExpiryDt = document.getElementById("strExpiryDt").value;
+      const derivativeQuantity = parseFloat(document.getElementById("strQuantity").value);
+      const derivativeEntryDttm = isoFromLocal(document.getElementById("strEntryDttm").value);
+      const derivativeEntryPrice = parseFloat(document.getElementById("strEntryPrice").value);
+      const derivativeTotalMargin = parseFloat(document.getElementById("strTotalMargin").value);
+      const derivativeTargetPrice = parseFloat(document.getElementById("strTargetPrice").value);
+      const derivativeStopLoss = parseFloat(document.getElementById("strStopLoss").value);
+      const exitDttmRaw = document.getElementById("strExitDttm").value;
+      const derivativeExitDttm = exitDttmRaw ? isoFromLocal(exitDttmRaw) : null;
+      const exitPriceRaw = document.getElementById("strExitPrice").value;
+      const derivativeExitPrice = exitPriceRaw ? parseFloat(exitPriceRaw) : null;
+      const legId = parseFloat(document.getElementById("strLegId").value);
+      const lot = parseFloat(document.getElementById("strLot").value);
+
+      if (!adviceName || !exchange || !strategyName || !isIntraday ||
+          !recommendationType || !derivativeName || !derivativeOptionStrikePrice ||
+          !derivativeOptionType || !derivativeType || !derivativeExpiryDt ||
+          !derivativeQuantity || !derivativeEntryDttm || !derivativeEntryPrice ||
+          !derivativeTotalMargin || !derivativeTargetPrice || !derivativeStopLoss ||
+          !legId || !lot) {
+        showResponse("Please fill all required Strategy fields.");
+        return;
+      }
+
+      const strategyDetails = [{
+        recommendationType,
+        derivativeName,
+        derivativeOptionStrikePrice,
+        derivativeOptionType,
+        derivativeType,
+        derivativeExpiryDt,
+        derivativeQuantity,
+        derivativeEntryDttm,
+        derivativeEntryPrice,
+        derivativeTotalMargin,
+        derivativeTargetPrice,
+        derivativeStopLoss,
+        derivativeExitDttm: derivativeExitDttm || undefined,
+        derivativeExitPrice: derivativeExitPrice || undefined,
+        legId,
+        lot,
+      }];
+
+      const body = [{
+        adviceName,
+        exchange,
+        strategyName,
+        isIntraday,
+        strategyDetails,
+      }];
+
+      submitToTrade("strategy", body);
+    });
+
+    // ALGO INPUT FORM
+    document.getElementById("formAlgoInput").addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const exchange = document.getElementById("algoExchange").value;
+      const tradingMember = document.getElementById("algoTradingMember").value.trim();
+      const algoId = document.getElementById("algoId").value.trim();
+      const uniqueClientCode = document.getElementById("algoUcc").value.trim();
+      const segment = document.getElementById("algoSegment").value;
+      const fixedCapital = parseFloat(document.getElementById("algoFixedCapital").value);
+
+      if (!exchange || !tradingMember || !algoId || !uniqueClientCode || !segment || !fixedCapital) {
+        showResponse("Please fill all required Algo Input fields.");
+        return;
+      }
+
+      const body = [{
+        exchange,
+        tradingMember,
+        algoId,
+        uniqueClientCode,
+        segment,
+        fixedCapital,
+      }];
+
+      submitToTrade("algoinput", body);
+    });
+  </script>
 </body>
 </html>
