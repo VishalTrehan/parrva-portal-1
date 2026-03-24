@@ -3,9 +3,9 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
-const jose = require("node-jose");
 const fs = require("fs");
 const path = require("path");
+const { webcrypto } = require("crypto");
 
 const app = express();
 app.use(cors());
@@ -28,26 +28,89 @@ const PDC_PUBLIC_KEY = fs.readFileSync(
 );
 
 // ======================================================
-// GENERIC JWE ENCRYPTION FUNCTION
+// LOW-LEVEL HELPERS (EXACTLY LIKE POSTMAN SCRIPT)
 // ======================================================
-async function encryptWithKey(publicKeyPem, payloadObj) {
-  const keyStore = jose.JWK.createKeyStore();
-  const key = await keyStore.add(publicKeyPem, "pem");
+function pemToArrayBuffer(pem) {
+  const b64 = pem
+    .replace(/-----BEGIN PUBLIC KEY-----/, "")
+    .replace(/-----END PUBLIC KEY-----/, "")
+    .replace(/\s+/g, "");
+  const bin = Buffer.from(b64, "base64");
+  return new Uint8Array(bin).buffer;
+}
 
-  const payload = JSON.stringify(payloadObj);
+function base64urlEncode(buf) {
+  return Buffer.from(buf)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
 
-  const jwe = await jose.JWE.createEncrypt(
+// ======================================================
+// JWE ENCRYPTION (1:1 PORT OF POSTMAN encryptJWE)
+// ======================================================
+async function encryptJWE(payload, publicKeyPem) {
+  const subtle = webcrypto.subtle;
+
+  // CEK: AES-GCM 256
+  const cek = await subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt"]
+  );
+
+  // Import RSA public key
+  const publicKey = await subtle.importKey(
+    "spki",
+    pemToArrayBuffer(publicKeyPem),
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    false,
+    ["encrypt"]
+  );
+
+  // Encrypt CEK with RSA-OAEP
+  const exportedCek = await subtle.exportKey("raw", cek);
+  const encryptedKey = await subtle.encrypt(
+    { name: "RSA-OAEP" },
+    publicKey,
+    exportedCek
+  );
+
+  // Protected header
+  const header = {
+    alg: "RSA-OAEP-256",
+    enc: "A256GCM"
+  };
+  const encodedHeader = base64urlEncode(
+    new TextEncoder().encode(JSON.stringify(header))
+  );
+
+  // IV
+  const iv = webcrypto.getRandomValues(new Uint8Array(12));
+
+  // Encrypt payload with AES-GCM, AAD = encodedHeader
+  const encryptedPayload = await subtle.encrypt(
     {
-      format: "compact",
-      fields: {
-        alg: "RSA-OAEP-256",
-        enc: "A256GCM"
-      }
+      name: "AES-GCM",
+      iv,
+      additionalData: new TextEncoder().encode(encodedHeader)
     },
-    key
-  )
-    .update(payload)
-    .final();
+    cek,
+    new TextEncoder().encode(payload)
+  );
+
+  const encryptedBuf = new Uint8Array(encryptedPayload);
+  const ciphertext = encryptedBuf.slice(0, encryptedBuf.length - 16);
+  const tag = encryptedBuf.slice(encryptedBuf.length - 16);
+
+  const jwe = [
+    encodedHeader,
+    base64urlEncode(encryptedKey),
+    base64urlEncode(iv),
+    base64urlEncode(ciphertext),
+    base64urlEncode(tag)
+  ].join(".");
 
   return jwe;
 }
@@ -59,14 +122,15 @@ app.post("/api/authenticate", async (req, res) => {
   try {
     const { enrolmentId, password, role } = req.body;
 
-    // PaRRVA expects "username", not "userId"
-    const payload = {
+    const payloadObj = {
       username: enrolmentId,
       password,
       role
     };
 
-    const jwe = await encryptWithKey(AUTH_PUBLIC_KEY, payload);
+    const plainPayload = JSON.stringify(payloadObj);
+
+    const jwe = await encryptJWE(plainPayload, AUTH_PUBLIC_KEY);
 
     const resp = await fetch(
       "https://careparrva.com/api/parrva/pdc/auth/authenticate",
@@ -103,7 +167,8 @@ async function submitAdvice(req, res, endpoint) {
   try {
     const { trade, token } = req.body;
 
-    const jwe = await encryptWithKey(PDC_PUBLIC_KEY, trade);
+    const plainPayload = JSON.stringify(trade);
+    const jwe = await encryptJWE(plainPayload, PDC_PUBLIC_KEY);
 
     const resp = await fetch(`https://pdc.nseasl.com${endpoint}`, {
       method: "POST",
@@ -132,10 +197,6 @@ async function submitAdvice(req, res, endpoint) {
     return res.status(500).json({ error: err.message });
   }
 }
-
-// ======================================================
-// ADVICE ROUTES (MATCHING POSTMAN COLLECTION)
-// ======================================================
 
 // Intraday
 app.post("/api/intraday", (req, res) =>
