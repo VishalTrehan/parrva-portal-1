@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PARRVA Trade Submission Portal</title>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    input, select { width: 300px; padding: 6px; margin: 5px 0; }
+    button { padding: 10px 20px; margin-top: 10px; }
+    pre { background: #f0f0f0; padding: 10px; }
+  </style>
+</head>
+<body>
+
+<h2>PARRVA Token Generator</h2>
+
+<label>Enrolment ID</label><br>
+<input id="enrolmentId"><br>
+
+<label>Password</label><br>
+<input id="password" type="password"><br>
+
+<label>Role</label><br>
+<select id="role">
+  <option value="TM">TM</option>
+</select><br>
+
+<button onclick="generateToken()">Generate Token</button>
+
+<h3>Token:</h3>
+<pre id="tokenBox"></pre>
+
+<hr>
+
+<h2>Submit Trade</h2>
+
+<label>API Type</label><br>
+<select id="apiType">
+  <option value="intraday">Intraday</option>
+  <option value="singlestock">Single Stock</option>
+  <option value="derivative">Derivative</option>
+  <option value="strategy">Strategy</option>
+  <option value="algoinput">Algo Input</option>
+</select><br>
+
+<textarea id="payload" rows="10" cols="80">
+{
+  "example": "Enter your trade JSON here"
+}
+</textarea><br>
+
+<button onclick="submitTrade()">Submit</button>
+
+<h3>Response:</h3>
+<pre id="responseBox"></pre>
+
+<script>
+const backend = "YOUR_BACKEND_URL_HERE"; // we will replace this after Cloud Run deploy
+
+async function generateToken() {
+  const body = {
+    enrolmentId: enrolmentId.value,
+    password: password.value,
+    role: role.value
+  };
+
+  const res = await fetch(backend + "/api/authenticate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  const data = await res.json();
+  tokenBox.textContent = JSON.stringify(data, null, 2);
+}
+
+async function submitTrade() {
+  const type = apiType.value;
+  const body = JSON.parse(payload.value);
+
+  const res = await fetch(backend + "/api/" + type, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  const data = await res.json();
+  responseBox.textContent = JSON.stringify(data, null, 2);
+}
+</script>
+
+</body>
+</html>
