@@ -1,4 +1,5 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
@@ -10,23 +11,37 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Load PEM keys
-const PARRVA_PUBLIC_KEY = fs.readFileSync(path.join(__dirname, "keys/payload-public.pem"), "utf8");
-const PDC_PUBLIC_KEY = fs.readFileSync(path.join(__dirname, "keys/pdc_public_key.pem"), "utf8");
+// ======================================================
+// LOAD CORRECT PUBLIC KEYS
+// ======================================================
 
-// Encrypt using RSA-OAEP-256 + A256GCM
+// AUTH KEY (PaRRVA Token Generation) — AtCTj4Oo...
+const AUTH_PUBLIC_KEY = fs.readFileSync(
+  path.join(__dirname, "keys/payload-public.pem"),
+  "utf8"
+);
+
+// PDC KEY (Advice Submission) — ojQVs6yFZ...
+const PDC_PUBLIC_KEY = fs.readFileSync(
+  path.join(__dirname, "keys/pdc_public_key.pem"),
+  "utf8"
+);
+
+// ======================================================
+// GENERIC JWE ENCRYPTION FUNCTION
+// ======================================================
 async function encryptWithKey(publicKeyPem, payloadObj) {
-  const keystore = jose.JWK.createKeyStore();
-  const key = await keystore.add(publicKeyPem, "pem");
+  const keyStore = jose.JWK.createKeyStore();
+  const key = await keyStore.add(publicKeyPem, "pem");
+
   const payload = JSON.stringify(payloadObj);
 
   const jwe = await jose.JWE.createEncrypt(
     {
       format: "compact",
       fields: {
-        cty: "application/json",
-        enc: "A256GCM",
-        alg: "RSA-OAEP-256"
+        alg: "RSA-OAEP-256",
+        enc: "A256GCM"
       }
     },
     key
@@ -37,90 +52,120 @@ async function encryptWithKey(publicKeyPem, payloadObj) {
   return jwe;
 }
 
-// 1️⃣ Generate Token
+// ======================================================
+// AUTHENTICATION (TOKEN GENERATION)
+// ======================================================
 app.post("/api/authenticate", async (req, res) => {
   try {
     const { enrolmentId, password, role } = req.body;
 
-    const encryptedData = await encryptWithKey(PARRVA_PUBLIC_KEY, {
-      userId: enrolmentId,
+    // PaRRVA expects "username", not "userId"
+    const payload = {
+      username: enrolmentId,
       password,
       role
-    });
+    };
 
-    const response = await fetch(
-      "https://www.careparrva.com/api/parrva/pdc/auth/authenticate",
+    const jwe = await encryptWithKey(AUTH_PUBLIC_KEY, payload);
+
+    const resp = await fetch(
+      "https://careparrva.com/api/parrva/pdc/auth/authenticate",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: encryptedData })
+        body: JSON.stringify({ data: jwe })
       }
     );
 
-    const json = await response.json();
-    res.json(json);
+    const text = await resp.text();
+    let json;
+
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return res.status(500).json({
+        error: "Non-JSON response from PaRRVA",
+        raw: text
+      });
+    }
+
+    return res.status(resp.ok ? 200 : 500).json(json);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Auth error:", err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-// Helper: IA vs RA routing
-function getRoute(enrolmentId) {
-  return enrolmentId.toUpperCase().startsWith("RA") ? "rainput" : "iainput";
-}
-
-// 2️⃣ Submit encrypted payload to PDC
-async function sendToPDC(enrolmentId, token, endpoint, payloadArray) {
-  const encryptedData = await encryptWithKey(PDC_PUBLIC_KEY, payloadArray);
-
-  const route = getRoute(enrolmentId);
-  const url = `https://pdc.nseasl.com/advice/${route}/${endpoint}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      accept: "*/*",
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      Encryption: "true"
-    },
-    body: JSON.stringify({ data: encryptedData })
-  });
-
-  const text = await response.text();
+// ======================================================
+// GENERIC FUNCTION FOR PDC ADVICE SUBMISSION
+// ======================================================
+async function submitAdvice(req, res, endpoint) {
   try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
+    const { trade, token } = req.body;
+
+    const jwe = await encryptWithKey(PDC_PUBLIC_KEY, trade);
+
+    const resp = await fetch(`https://pdc.nseasl.com${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify([{ data: jwe }])
+    });
+
+    const text = await resp.text();
+    let json;
+
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return res.status(500).json({
+        error: "Non-JSON response from PDC",
+        raw: text
+      });
+    }
+
+    return res.status(resp.ok ? 200 : 500).json(json);
+  } catch (err) {
+    console.error("Advice error:", err);
+    return res.status(500).json({ error: err.message });
   }
 }
 
-// API endpoints
-app.post("/api/intraday", async (req, res) => {
-  const { enrolmentId, token, trade } = req.body;
-  res.json(await sendToPDC(enrolmentId, token, "intraday", [trade]));
-});
+// ======================================================
+// ADVICE ROUTES (MATCHING POSTMAN COLLECTION)
+// ======================================================
 
-app.post("/api/singlestock", async (req, res) => {
-  const { enrolmentId, token, trade } = req.body;
-  res.json(await sendToPDC(enrolmentId, token, "singlestock", [trade]));
-});
+// Intraday
+app.post("/api/intraday", (req, res) =>
+  submitAdvice(req, res, "/advice/iainput/intraday")
+);
 
-app.post("/api/derivative", async (req, res) => {
-  const { enrolmentId, token, trade } = req.body;
-  res.json(await sendToPDC(enrolmentId, token, "derivative", [trade]));
-});
+// Single Stock
+app.post("/api/singlestock", (req, res) =>
+  submitAdvice(req, res, "/advice/iainput/singlestock")
+);
 
-app.post("/api/strategy", async (req, res) => {
-  const { enrolmentId, token, trade } = req.body;
-  res.json(await sendToPDC(enrolmentId, token, "strategy", [trade]));
-});
+// Derivative
+app.post("/api/derivative", (req, res) =>
+  submitAdvice(req, res, "/advice/iainput/derivative")
+);
 
-app.post("/api/algoinput", async (req, res) => {
-  const { enrolmentId, token, algo } = req.body;
-  res.json(await sendToPDC(enrolmentId, token, "algoinput", [algo]));
-});
+// Strategy
+app.post("/api/strategy", (req, res) =>
+  submitAdvice(req, res, "/advice/iainput/strategy")
+);
 
-// Start server
+// Algo Input
+app.post("/api/algoinput", (req, res) =>
+  submitAdvice(req, res, "/advice/iainput/algoinput")
+);
+
+// ======================================================
+// START SERVER
+// ======================================================
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("Server running on port", PORT));
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
